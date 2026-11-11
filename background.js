@@ -1,13 +1,15 @@
-// Background service worker (Manifest V3).
-// Manages default settings in chrome.storage.local, toolbar badge state, and
-// network-level /shorts/ redirects via declarativeNetRequest so direct links
-// never even load the Shorts player shell.
+// Cross-browser MV3 background script (Chrome service worker + Firefox event page).
+// Manages default settings in storage.local, toolbar badge state, and network-level
+// /shorts/ redirects via declarativeNetRequest so direct links never load the Shorts shell.
 // (Client-side YouTube SPA navigations are handled alongside this in content.js.)
 
+const ext = globalThis.browser ?? globalThis.chrome;
 const STORAGE_KEY = "enabled";
 const REDIRECT_RULE_IDS = [1, 2, 3];
 
 // Dynamic redirect rules installed only while Shorts Off is enabled.
+// Group 1 uses ((?:www\.|m\.)?) so \1 always resolves to a string ("www.", "m.", or "")
+// in both Chrome's RE2 engine and Firefox's SpiderMonkey RegExp engine.
 const SHORTS_REDIRECT_RULES = [
   {
     id: 1,
@@ -20,7 +22,7 @@ const SHORTS_REDIRECT_RULES = [
       }
     },
     condition: {
-      regexFilter: "^https?://(www\\.|m\\.)?youtube\\.com/shorts/([A-Za-z0-9_-]+)/?\\?([^#]+)$",
+      regexFilter: "^https?://((?:www\\.|m\\.)?)youtube\\.com/shorts/([A-Za-z0-9_-]+)/?\\?([^#]+)(?:#.*)?$",
       resourceTypes: ["main_frame"]
     }
   },
@@ -34,7 +36,7 @@ const SHORTS_REDIRECT_RULES = [
       }
     },
     condition: {
-      regexFilter: "^https?://(www\\.|m\\.)?youtube\\.com/shorts/([A-Za-z0-9_-]+)/?$",
+      regexFilter: "^https?://((?:www\\.|m\\.)?)youtube\\.com/shorts/([A-Za-z0-9_-]+)/?(?:#.*)?$",
       resourceTypes: ["main_frame"]
     }
   },
@@ -49,7 +51,7 @@ const SHORTS_REDIRECT_RULES = [
       }
     },
     condition: {
-      regexFilter: "^https?://(www\\.|m\\.)?youtube\\.com/shorts/?(?:\\?.*)?$",
+      regexFilter: "^https?://((?:www\\.|m\\.)?)youtube\\.com/shorts/?(?:\\?[^#]*)?(?:#.*)?$",
       resourceTypes: ["main_frame"]
     }
   }
@@ -61,14 +63,17 @@ let syncQueue = Promise.resolve();
 function syncExtensionState(enabled) {
   syncQueue = syncQueue
     .then(async () => {
-      await chrome.declarativeNetRequest.updateDynamicRules({
+      await ext.declarativeNetRequest.updateDynamicRules({
         removeRuleIds: REDIRECT_RULE_IDS,
         addRules: enabled ? SHORTS_REDIRECT_RULES : []
       });
 
-      await chrome.action.setBadgeText({ text: enabled ? "" : "OFF" });
+      await ext.action.setBadgeText({ text: enabled ? "" : "OFF" });
       if (!enabled) {
-        await chrome.action.setBadgeBackgroundColor({ color: "#52525b" });
+        await ext.action.setBadgeBackgroundColor({ color: "#52525b" });
+        if (typeof ext.action.setBadgeTextColor === "function") {
+          await ext.action.setBadgeTextColor({ color: "#ffffff" });
+        }
       }
     })
     .catch((err) => {
@@ -79,21 +84,21 @@ function syncExtensionState(enabled) {
 }
 
 async function initState() {
-  const stored = await chrome.storage.local.get({ [STORAGE_KEY]: true });
+  const stored = await ext.storage.local.get({ [STORAGE_KEY]: true });
   const enabled = stored[STORAGE_KEY] !== false;
-  await chrome.storage.local.set({ [STORAGE_KEY]: enabled });
+  await ext.storage.local.set({ [STORAGE_KEY]: enabled });
   await syncExtensionState(enabled);
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+ext.runtime.onInstalled.addListener(() => {
   initState();
 });
 
-chrome.runtime.onStartup.addListener(() => {
+ext.runtime.onStartup.addListener(() => {
   initState();
 });
 
-chrome.storage.onChanged.addListener((changes, areaName) => {
+ext.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "local" && changes[STORAGE_KEY]) {
     syncExtensionState(Boolean(changes[STORAGE_KEY].newValue));
   }

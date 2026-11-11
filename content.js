@@ -1,11 +1,12 @@
-// Content script injected at document_start on youtube.com.
+// Content script injected at document_start on youtube.com (Chrome & Firefox).
 // Handles:
-// 1. Syncing the on/off toggle from chrome.storage.local
+// 1. Syncing the on/off toggle from storage.local
 // 2. Redirecting /shorts/<id> URLs (including SPA navigations) to /watch?v=<id>
 // 3. Preventing end-of-video autoplay & recommendations from dropping into Shorts
 // 4. Watching YouTube's dynamic DOM via MutationObserver to hide newly loaded Shorts
 
 (() => {
+  const ext = globalThis.browser ?? globalThis.chrome;
   const STORAGE_KEY = "enabled";
   const ROOT_ATTR = "data-shorts-off";
   const HIDDEN_ATTR = "data-shorts-off-hidden";
@@ -19,11 +20,34 @@
   let lastVideoEndTime = 0;
   let cachedNextNormalVideoUrl = null;
 
-  // Optimistically enable CSS rules at document_start so Shorts never flash on load.
-  // If storage resolves to false a few ms later, applyEnabledState(false) removes it immediately.
-  if (document.documentElement) {
-    document.documentElement.setAttribute(ROOT_ATTR, "true");
+  function isElementNode(node) {
+    return Boolean(node && node.nodeType === Node.ELEMENT_NODE);
   }
+
+  function isVideoElement(node) {
+    return isElementNode(node) && node.tagName.toLowerCase() === "video";
+  }
+
+  /**
+   * Keeps html[data-shorts-off] synced with isEnabled.
+   * Safe at document_start in Firefox, where document.documentElement may be null
+   * until the HTML parser inserts the root <html> element.
+   */
+  function syncRootAttribute() {
+    const root = document.documentElement;
+    if (!root) return;
+
+    if (isEnabled) {
+      if (root.getAttribute(ROOT_ATTR) !== "true") {
+        root.setAttribute(ROOT_ATTR, "true");
+      }
+    } else if (root.hasAttribute(ROOT_ATTR)) {
+      root.removeAttribute(ROOT_ATTR);
+    }
+  }
+
+  // Optimistically enable CSS rules at document_start so Shorts never flash on load.
+  syncRootAttribute();
 
   /**
    * Converts a YouTube /shorts/ URL into a standard /watch?v= URL (or "/" for bare /shorts).
@@ -117,7 +141,7 @@
     const userClickedRecently = now - lastUserGestureTime < 2500;
     const video = document.querySelector("video.html5-main-video");
     const videoCurrentlyAtEnd = Boolean(
-      video instanceof HTMLVideoElement &&
+      isVideoElement(video) &&
         (video.ended || (video.duration > 0 && video.duration - video.currentTime <= 3))
     );
     const endedRecently = videoCurrentlyAtEnd || now - lastVideoEndTime < 4000;
@@ -146,7 +170,7 @@
    * Polymer router recycled for normal videos on subsequent navigations.
    */
   function isShortsElement(el) {
-    if (!(el instanceof Element)) return false;
+    if (!isElementNode(el)) return false;
     const tag = el.tagName.toLowerCase();
 
     // Dedicated Shorts shelves and lockups.
@@ -166,7 +190,9 @@
 
     if (tag === "ytd-rich-section-renderer") {
       return Boolean(
-        el.querySelector("ytd-rich-shelf-renderer[is-shorts], ytd-reel-shelf-renderer, ytm-shorts-lockup-view-model, ytm-shorts-lockup-view-model-v2")
+        el.querySelector(
+          "ytd-rich-shelf-renderer[is-shorts], ytd-reel-shelf-renderer, ytm-shorts-lockup-view-model, ytm-shorts-lockup-view-model-v2"
+        )
       );
     }
 
@@ -271,7 +297,7 @@
       ) {
         markHidden(upNextContainer);
         const cancelButton = player.querySelector(".ytp-autonav-endscreen-upnext-cancel-button");
-        if (cancelButton instanceof HTMLElement) {
+        if (cancelButton && typeof cancelButton.click === "function") {
           cancelButton.click();
         }
       }
@@ -313,6 +339,7 @@
    */
   function scanPage() {
     scanScheduled = false;
+    syncRootAttribute();
     if (!isEnabled) return;
 
     if (handleShortsUrlIfNeeded()) {
@@ -344,6 +371,7 @@
    * Batches rapid DOM mutations into a single scan per animation frame to keep scrolling smooth.
    */
   function scheduleScan() {
+    syncRootAttribute();
     if (!isEnabled || scanScheduled) return;
 
     // Always run URL redirect checks synchronously so SPA navigations never render /shorts/.
@@ -360,26 +388,24 @@
 
   function applyEnabledState(enabled) {
     isEnabled = Boolean(enabled);
-
-    if (!document.documentElement) return;
+    syncRootAttribute();
 
     if (isEnabled) {
-      document.documentElement.setAttribute(ROOT_ATTR, "true");
       scanPage();
     } else {
-      document.documentElement.removeAttribute(ROOT_ATTR);
       document.querySelectorAll(`[${HIDDEN_ATTR}="true"]`).forEach((el) => {
         el.removeAttribute(HIDDEN_ATTR);
       });
     }
   }
 
-  // Observe dynamic YouTube content additions and Polymer attribute updates.
+  // Observe `document` (not `document.documentElement`) so MutationObserver never fails at
+  // document_start in Firefox before the root <html> element has been parsed.
   const observer = new MutationObserver(() => {
     scheduleScan();
   });
 
-  observer.observe(document.documentElement, {
+  observer.observe(document, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -407,7 +433,7 @@
         return;
       }
 
-      const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      const target = isElementNode(event.target) ? event.target.closest("a[href]") : null;
       if (!target) return;
 
       const watchUrl = getShortsRedirectUrl(target.href);
@@ -434,7 +460,7 @@
   document.addEventListener(
     "timeupdate",
     (event) => {
-      if (!isEnabled || !(event.target instanceof HTMLVideoElement)) return;
+      if (!isEnabled || !isVideoElement(event.target)) return;
       const video = event.target;
       if (!Number.isFinite(video.duration) || video.duration <= 0) return;
       const remaining = video.duration - video.currentTime;
@@ -452,7 +478,7 @@
   document.addEventListener(
     "ended",
     (event) => {
-      if (!isEnabled || !(event.target instanceof HTMLVideoElement)) return;
+      if (!isEnabled || !isVideoElement(event.target)) return;
       lastVideoEndTime = Date.now();
       cachedNextNormalVideoUrl = findNextNormalRecommendationUrl() || cachedNextNormalVideoUrl;
       guardAutoplayAndEndscreen();
@@ -479,19 +505,19 @@
     });
   }
 
-  // Load saved toggle state from chrome.storage.local and stay synced when toggled from popup.
-  chrome.storage.local.get({ [STORAGE_KEY]: true }, (result) => {
+  // Load saved toggle state from storage.local (Promise API works in both Firefox & Chrome MV3).
+  ext.storage.local.get({ [STORAGE_KEY]: true }).then((result) => {
     applyEnabledState(result[STORAGE_KEY] !== false);
   });
 
-  chrome.storage.onChanged.addListener((changes, areaName) => {
+  ext.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === "local" && changes[STORAGE_KEY]) {
       applyEnabledState(changes[STORAGE_KEY].newValue !== false);
     }
   });
 
   // Allow the popup to query how many Shorts elements are currently hidden on this tab.
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "GET_SHORTS_STATUS") {
       const hiddenCount = isEnabled
         ? document.querySelectorAll(`[${HIDDEN_ATTR}="true"]`).length

@@ -1,9 +1,12 @@
 /*
- * Instant zero-flash CSS rules for Shorts Off.
+ * Instant zero-flash CSS rules for Shorts Off (Chrome & Firefox).
  *
  * Every rule is scoped to html[data-shorts-off="true"] so toggling the extension
  * on or off in the popup immediately hides or restores Shorts across open tabs
  * without needing a page reload or mutating YouTube's Polymer component tree.
+ *
+ * Plain selectors and :has() selectors are kept in separate rule blocks so
+ * older browser engines never drop standard selectors if :has() is disabled.
  */
 
 /* 1. Elements dynamically tagged by the MutationObserver in content.js */
@@ -11,21 +14,24 @@ html[data-shorts-off="true"] [data-shorts-off-hidden="true"] {
   display: none !important;
 }
 
-/* 2. Shorts shelves & rows on Home, Search, Subscriptions, Channel pages, and Watch sidebar */
-html[data-shorts-off="true"] ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
+/* 2. Standard selectors (no :has()) for dedicated Shorts shelves, cards, tabs & overlays */
 html[data-shorts-off="true"] ytd-rich-shelf-renderer[is-shorts],
 html[data-shorts-off="true"] ytd-reel-shelf-renderer,
-html[data-shorts-off="true"] ytd-item-section-renderer:has(> #contents > ytd-reel-shelf-renderer:only-child),
-html[data-shorts-off="true"] grid-shelf-view-model:has(ytm-shorts-lockup-view-model),
-html[data-shorts-off="true"] grid-shelf-view-model:has(ytm-shorts-lockup-view-model-v2),
-html[data-shorts-off="true"] ytm-reel-shelf-renderer {
-  display: none !important;
-}
-
-/* 3. Individual Short cards mixed into feeds, search results, subscriptions, and related videos */
+html[data-shorts-off="true"] ytm-reel-shelf-renderer,
 html[data-shorts-off="true"] ytm-shorts-lockup-view-model,
 html[data-shorts-off="true"] ytm-shorts-lockup-view-model-v2,
 html[data-shorts-off="true"] ytd-reel-item-renderer,
+html[data-shorts-off="true"] ytd-mini-guide-entry-renderer[aria-label="Shorts" i],
+html[data-shorts-off="true"] yt-tab-shape[tab-title="Shorts" i],
+html[data-shorts-off="true"] .ytp-videowall-still[href*="/shorts/"] {
+  display: none !important;
+}
+
+/* 3. Parent-aware :has() selectors (Chrome 105+ & Firefox 121+) for zero-flash hiding */
+html[data-shorts-off="true"] ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
+html[data-shorts-off="true"] ytd-item-section-renderer:has(> #contents > ytd-reel-shelf-renderer:only-child),
+html[data-shorts-off="true"] grid-shelf-view-model:has(ytm-shorts-lockup-view-model),
+html[data-shorts-off="true"] grid-shelf-view-model:has(ytm-shorts-lockup-view-model-v2),
 html[data-shorts-off="true"] ytd-rich-item-renderer:has(ytm-shorts-lockup-view-model),
 html[data-shorts-off="true"] ytd-rich-item-renderer:has(ytm-shorts-lockup-view-model-v2),
 html[data-shorts-off="true"] ytd-rich-item-renderer:has(a[href*="/shorts/"]),
@@ -35,11 +41,7 @@ html[data-shorts-off="true"] ytd-grid-video-renderer:has(a#thumbnail[href*="/sho
 html[data-shorts-off="true"] ytd-grid-video-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"]),
 html[data-shorts-off="true"] ytd-compact-video-renderer:has(a#thumbnail[href*="/shorts/"]),
 html[data-shorts-off="true"] ytd-compact-video-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"]),
-html[data-shorts-off="true"] yt-lockup-view-model:has(a[href*="/shorts/"]) {
-  display: none !important;
-}
-
-/* 4. Left sidebar, mini sidebar, and mobile bottom bar Shorts buttons */
+html[data-shorts-off="true"] yt-lockup-view-model:has(a[href*="/shorts/"]),
 html[data-shorts-off="true"] ytd-guide-entry-renderer:has(a[href="/shorts"]),
 html[data-shorts-off="true"] ytd-guide-entry-renderer:has(a[href^="/shorts/"]),
 html[data-shorts-off="true"] ytd-guide-entry-renderer:has(a[href^="/shorts?"]),
@@ -47,14 +49,7 @@ html[data-shorts-off="true"] ytd-guide-entry-renderer:has(a[title="Shorts" i]),
 html[data-shorts-off="true"] ytd-mini-guide-entry-renderer:has(a[href="/shorts"]),
 html[data-shorts-off="true"] ytd-mini-guide-entry-renderer:has(a[href^="/shorts/"]),
 html[data-shorts-off="true"] ytd-mini-guide-entry-renderer:has(a[title="Shorts" i]),
-html[data-shorts-off="true"] ytd-mini-guide-entry-renderer[aria-label="Shorts" i],
-html[data-shorts-off="true"] ytm-pivot-bar-item-renderer:has(.pivot-shorts) {
-  display: none !important;
-}
-
-/* 5. Channel page "Shorts" tab & player endscreen / autoplay Shorts overlays */
-html[data-shorts-off="true"] yt-tab-shape[tab-title="Shorts" i],
-html[data-shorts-off="true"] .ytp-videowall-still[href*="/shorts/"],
+html[data-shorts-off="true"] ytm-pivot-bar-item-renderer:has(.pivot-shorts),
 html[data-shorts-off="true"] .ytp-ce-element:has(a[href*="/shorts/"]),
 html[data-shorts-off="true"] .ytp-autonav-endscreen-upnext-container:has(a[href*="/shorts/"]) {
   display: none !important;

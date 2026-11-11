@@ -1,8 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Shorts Off",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Removes YouTube Shorts shelves, sidebar buttons, and recommendations, and redirects /shorts/ URLs to the normal video player.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "shorts-off@magicbuss.dev",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
   "permissions": [
     "storage",
     "declarativeNetRequest"
@@ -27,7 +37,10 @@
     "128": "icons/icon128.png"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
